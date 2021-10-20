@@ -1,0 +1,274 @@
+#include <SPI.h>      
+#include <RF24.h>    
+#include <Servo.h>    
+
+uint32_t amostra_tempo; 
+
+Servo myservo;
+
+
+const uint64_t pipe = 0xE8E8F0F0E1LL;  
+
+RF24 radio(9, 10);  
+
+struct Meujoystick  {  
+  byte Motor;                
+  byte Re;
+  byte Direcao;              
+  byte Buzzer;               
+  byte Farol;                
+  byte Seta_Direita;         
+  byte Seta_Esquerda;        
+  byte PiscaAlerta;
+  byte Luzes;
+  byte Sirene;
+  byte Iluminacao;
+};
+
+
+Meujoystick joystick;   
+byte VMotor = 0;             
+byte VRe = 0;                  
+byte VDirecao = 0;             
+byte VBuzzer = 0;          
+byte VFarol = 0;
+byte VSeta_Direita = 0;
+byte VSeta_Esquerda = 0;
+byte VPiscaAlerta = 0;         
+byte VLuzes = 0;
+byte VSirene = 0;              
+int VIluminacao = 0;            
+//int Temp = 0;
+
+void setup()
+{
+  Serial.begin(9600);   
+
+  delay(1000);   
+
+  Serial.println("Codigo RECEPTOR Nrf24L01"); //Imprimindo na tela via serial o texto entre aspas
+
+
+  pinMode(2, OUTPUT);
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+  pinMode(7, OUTPUT);
+  pinMode(8, OUTPUT);
+  pinMode(A0, OUTPUT);
+
+  radio.begin();
+
+  radio.setAutoAck(false);
+  radio.setDataRate(RF24_250KBPS);
+  radio.setPALevel(RF24_PA_MAX);
+  radio.powerUp(); 
+  radio.startListening();
+
+  Sirene_Lenta();
+  for (int t = 0; t < 15; t ++) {
+    Sirene_Rapida();
+  }
+  digitalWrite(2, HIGH);
+  digitalWrite(A0, HIGH);
+  delay(300);
+  digitalWrite(2, LOW);
+  digitalWrite(A0, LOW);
+  delay(300);
+  digitalWrite(2, HIGH);
+  digitalWrite(A0, HIGH);
+  delay(300);
+  digitalWrite(2, LOW);
+  digitalWrite(A0, LOW);
+}
+
+void loop()
+{
+  radio.startListening();
+  myservo.attach(3);
+  RX();
+
+}
+
+void RX()
+{
+  Serial.println(" Iniciando Recepcao Nrf24L01");
+  radio.openReadingPipe(1, pipe);
+
+  
+  if ( radio.available() )
+  {
+
+    boolean sinal = false;
+    while (!sinal)
+    {
+
+      sinal = radio.read( &joystick, sizeof(joystick) );
+      VMotor = joystick.Motor;
+      VRe = joystick.Re;
+      VDirecao = joystick.Direcao;               
+      VBuzzer = joystick.Buzzer;                 
+      VFarol = joystick.Farol;                   
+      VSeta_Direita = joystick.Seta_Direita;     
+      VSeta_Esquerda = joystick.Seta_Esquerda;   
+      VPiscaAlerta = joystick.PiscaAlerta;
+      VLuzes = joystick.Luzes;
+      VSirene = joystick.Sirene;
+      VIluminacao = joystick.Iluminacao;
+
+
+      if (VRe == 1) {
+        analogWrite(5, VMotor);
+        analogWrite(6, LOW);
+      }
+      else {
+        analogWrite(5, LOW);
+        analogWrite(6, VMotor);
+      }
+
+      myservo.write(VDirecao);
+
+      if (VBuzzer != 1) {
+        tone(4, 600);
+      } else {
+        noTone(4);
+      }
+      if (VFarol == 1) {
+        digitalWrite(2, HIGH);
+      }
+      else {
+        digitalWrite(2, LOW);
+      }
+
+      if (VIluminacao == 1) {
+        digitalWrite(A0, HIGH);
+      }
+      else {
+        digitalWrite(A0, LOW);
+      }
+
+      digitalWrite(7, LOW);
+      if (VSeta_Direita == 1) {      
+        if (millis() - amostra_tempo > 400) {
+          digitalWrite(7, HIGH);
+        }
+        if (millis() - amostra_tempo > 750) {
+          digitalWrite(7, LOW);
+          amostra_tempo = millis();
+        }
+      }
+
+
+      digitalWrite(8, LOW);
+      if (VSeta_Esquerda == 1) {      
+        if (millis() - amostra_tempo > 400) {
+          digitalWrite(8, HIGH);
+        }
+        if (millis() - amostra_tempo > 750) {
+          digitalWrite(8, LOW);
+          amostra_tempo = millis();
+        }
+      }
+
+      // Pisca Alerta, faz os leds das setas direita e esquerda piscarem juntos ou não, de acordo com o valor da variavel VPiscaAlerta
+      if (VPiscaAlerta == 1) {       // Pisca Alerta
+
+        if (millis() - amostra_tempo > 400) {   // função millis no if faz acontagem de tempo que as setas devem ficar acesas
+          digitalWrite(7, HIGH);
+          digitalWrite(8, HIGH);
+        }
+        if (millis() - amostra_tempo > 750) {  // função millis no if faz acontagem de tempo que as setas devem ficar apagadas
+          digitalWrite(7, LOW);
+          digitalWrite(8, LOW);
+          amostra_tempo = millis();
+        }
+      }
+
+
+      // Luzes, faz todos os leds do veículo piscarem ou não, de acordo com o valor da variavel VLuzes
+      if (VLuzes == 1) {      
+        Luzes () ;
+      }
+
+      // Sirene, aciona o buzzer produzindo som de sirena de acordo com o valor da variavel VSirene
+      if (VSirene == 1) {       // Sirene 2
+        Sirene_Rapida ();
+      }
+
+    }
+  }
+  else  // Se nao existir dados enviados pelo transmissor ou o receptor por algum problema não conseguir recebelos
+  {
+    radio.stopListening();  // Interrompendo mecanismos de recpção "escuta" do Módulo
+    Serial.println("Sem Sinal do Radio: Verifique se o transmissor esta ligado");   // Imprimindo na tela via serial o texto entre aspas
+
+    if (millis() - amostra_tempo > 2000) { // Se passarem mais de 3 segundos sem conexão com o transmissor os motores são desligados automaticamente para evitar que o veículo ande sem controle
+      tone(4, 300, 100);
+      digitalWrite(5, LOW);
+      digitalWrite(6, LOW);
+      amostra_tempo = millis();
+    }
+  }
+}
+
+void Sirene_Lenta() {    // Função Sirene_Lenta que faz com que o buzzer emita um som de sirene (semelhante a ambulância)
+  int frequencia = 0;
+
+  digitalWrite(7, LOW);
+  digitalWrite(8, LOW);
+
+  for (frequencia = 100; frequencia < 2000; frequencia += 1) {
+    tone(4, frequencia, 10);
+    //delay(1);
+  }
+  digitalWrite(7, HIGH);
+  digitalWrite(8, HIGH);
+
+  for (frequencia = 2000 ; frequencia > 100; frequencia -= 1) {
+    tone(4, frequencia, 10);
+    //delay(1);
+  }
+  digitalWrite(7, LOW);
+  digitalWrite(8, LOW);
+}
+void Sirene_Rapida() {      //Função Sirene_Rapida que faz com que o buzzer emita um som de sirene (semelhante a um carro de polícia)
+  int frequencia = 0;
+
+  digitalWrite(7, HIGH);
+  digitalWrite(8, HIGH);
+
+  for (frequencia = 150; frequencia < 1800; frequencia += 40) {
+    tone(4, frequencia, 10);
+    delay(1);
+  }
+  digitalWrite(7, LOW);
+  digitalWrite(8, LOW);
+
+  for (frequencia = 1800 ; frequencia > 150; frequencia -= 40) {
+    tone(4, frequencia, 10);
+    delay(1);
+  }
+}
+
+void Luzes() {     // A função Luzes faz todas as luzes do veículo piscarem auternadamente
+  if (millis() - amostra_tempo > 200) {
+    digitalWrite(7, HIGH);
+    digitalWrite(8, HIGH);
+    digitalWrite(A0, LOW);
+    digitalWrite(2, LOW);
+  }
+  if (millis() - amostra_tempo > 400) {
+    digitalWrite(7, LOW);
+    digitalWrite(8, LOW);
+    digitalWrite(A0, HIGH);
+    digitalWrite(2, HIGH);
+  }
+  if (millis() - amostra_tempo > 600) {
+    digitalWrite(7, HIGH);
+    digitalWrite(8, HIGH);
+    digitalWrite(A0, LOW);
+    digitalWrite(2, LOW);
+    amostra_tempo = millis();
+  }
+}
